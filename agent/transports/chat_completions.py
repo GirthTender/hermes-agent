@@ -114,15 +114,20 @@ class ChatCompletionsTransport(ProviderTransport):
     ) -> list[dict[str, Any]]:
         """Messages are already in OpenAI format — sanitize Codex leaks only.
 
-        Strips Codex Responses API fields (``codex_reasoning_items`` /
-        ``codex_message_items`` on the message, ``call_id``/``response_item_id``
-        on tool_calls) that strict chat-completions providers reject with 400/422.
+        Strips internal-only fields and Codex Responses API fields
+        (``codex_reasoning_items`` / ``codex_message_items`` on the message,
+        ``call_id``/``response_item_id`` on tool_calls) that strict
+        chat-completions providers reject with 400/422.
         """
         needs_sanitize = False
         for msg in messages:
             if not isinstance(msg, dict):
                 continue
-            if "codex_reasoning_items" in msg or "codex_message_items" in msg:
+            if (
+                "tool_name" in msg
+                or "codex_reasoning_items" in msg
+                or "codex_message_items" in msg
+            ):
                 needs_sanitize = True
                 break
             tool_calls = msg.get("tool_calls")
@@ -143,6 +148,10 @@ class ChatCompletionsTransport(ProviderTransport):
         for msg in sanitized:
             if not isinstance(msg, dict):
                 continue
+            # Internal DB/search metadata. OpenAI-compatible wire payloads
+            # use ``name`` / ``tool_call_id`` for tool messages; providers
+            # such as Groq reject the extra ``tool_name`` field.
+            msg.pop("tool_name", None)
             msg.pop("codex_reasoning_items", None)
             msg.pop("codex_message_items", None)
             tool_calls = msg.get("tool_calls")
