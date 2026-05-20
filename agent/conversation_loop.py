@@ -934,6 +934,49 @@ def run_conversation(
         api_kwargs = None  # Guard against UnboundLocalError in except handler
 
         while retry_count < max_retries:
+            # ── OpenAI Codex OAuth usage-cap guard ───────────────────
+            # Usage-limit 429s are account/plan scoped. If another session
+            # already recorded a reset window, do not call Codex again before
+            # reset; switch to the configured fallback chain immediately.
+            if agent.provider == "openai-codex":
+                try:
+                    from agent.openai_codex_rate_guard import (
+                        openai_codex_rate_limit_remaining,
+                        format_remaining as _fmt_codex_remaining,
+                    )
+                    _codex_remaining = openai_codex_rate_limit_remaining()
+                    if _codex_remaining is not None and _codex_remaining > 0:
+                        _codex_msg = (
+                            f"OpenAI Codex OAuth usage cap active — "
+                            f"resets in {_fmt_codex_remaining(_codex_remaining)}."
+                        )
+                        agent._vprint(
+                            f"{agent.log_prefix}⏳ {_codex_msg} Trying fallback...",
+                            force=True,
+                        )
+                        agent._emit_status(f"⏳ {_codex_msg}")
+                        if agent._try_activate_fallback(reason=FailoverReason.rate_limit):
+                            retry_count = 0
+                            compression_attempts = 0
+                            primary_recovery_attempted = False
+                            continue
+                        agent._persist_session(messages, conversation_history)
+                        return {
+                            "final_response": (
+                                f"⏳ {_codex_msg}\n\n"
+                                "No fallback provider available. "
+                                "Try again after the reset, or add a "
+                                "fallback provider in config.yaml."
+                            ),
+                            "messages": messages,
+                            "api_calls": api_call_count,
+                            "completed": False,
+                            "failed": True,
+                            "error": _codex_msg,
+                        }
+                except ImportError:
+                    pass
+
             # ── Nous Portal rate limit guard ──────────────────────
             # If another session already recorded that Nous is rate-
             # limited, skip the API call entirely.  Each attempt
@@ -2344,6 +2387,34 @@ def run_conversation(
                             compression_attempts = 0
                             primary_recovery_attempted = False
                             continue
+
+                # ── OpenAI Codex OAuth: record usage-cap reset window ──
+                # The OAuth token is valid in this class of failure; the plan
+                # allowance is temporarily capped. Recording it prevents other
+                # cached gateway sessions from hammering Codex until reset.
+                if (
+                    is_rate_limited
+                    and agent.provider == "openai-codex"
+                    and classified.reason == FailoverReason.rate_limit
+                    and not recovered_with_pool
+                ):
+                    try:
+                        from agent.openai_codex_rate_guard import (
+                            is_codex_usage_limit,
+                            record_openai_codex_rate_limit,
+                        )
+                        if is_codex_usage_limit(error_context):
+                            _err_resp = getattr(api_error, "response", None)
+                            _err_hdrs = (
+                                getattr(_err_resp, "headers", None)
+                                if _err_resp else None
+                            )
+                            record_openai_codex_rate_limit(
+                                headers=_err_hdrs,
+                                error_context=error_context,
+                            )
+                    except Exception:
+                        pass
 
                 # ── Nous Portal: record rate limit & skip retries ─────
                 # When Nous returns a 429 that is a genuine account-

@@ -1949,6 +1949,15 @@ def extract_api_error_context(error: Exception) -> Dict[str, Any]:
     payload = None
     if isinstance(body, dict):
         payload = body.get("error") if isinstance(body.get("error"), dict) else body
+    if payload is None:
+        response = getattr(error, "response", None)
+        if response is not None:
+            try:
+                response_body = response.json()
+                if isinstance(response_body, dict):
+                    payload = response_body.get("error") if isinstance(response_body.get("error"), dict) else response_body
+            except Exception:
+                pass
     if isinstance(payload, dict):
         reason = payload.get("code") or payload.get("type") or payload.get("error")
         if isinstance(reason, str) and reason.strip():
@@ -1956,6 +1965,13 @@ def extract_api_error_context(error: Exception) -> Dict[str, Any]:
         message = payload.get("message") or payload.get("error_description")
         if isinstance(message, str) and message.strip():
             context["message"] = message.strip()
+        plan_type = payload.get("plan_type")
+        if isinstance(plan_type, str) and plan_type.strip():
+            context["plan_type"] = plan_type.strip()
+        resets_in = payload.get("resets_in_seconds")
+        if isinstance(resets_in, (int, float)) and resets_in > 0:
+            context["resets_in_seconds"] = float(resets_in)
+            context.setdefault("reset_at", time.time() + float(resets_in))
         for key in ("resets_at", "reset_at"):
             value = payload.get(key)
             if value not in {None, ""}:
