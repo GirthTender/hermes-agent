@@ -146,6 +146,27 @@ class TestBuildApiKwargsOpenRouter:
         assert messages[1]["tool_calls"][0]["response_item_id"] == "fc_123"
         assert "codex_reasoning_items" in messages[1]
 
+    def test_strips_reasoning_content_for_groq_chat_fallback(self, monkeypatch):
+        agent = _make_agent(
+            monkeypatch,
+            "groq-direct",
+            base_url="https://api.groq.com/openai/v1",
+            model="meta-llama/llama-4-scout-17b-16e-instruct",
+        )
+        messages = [
+            {"role": "user", "content": "hi"},
+            {
+                "role": "assistant",
+                "content": "Checking now.",
+                "reasoning_content": "private scratchpad",
+            },
+        ]
+
+        kwargs = agent._build_api_kwargs(messages)
+
+        assert "reasoning_content" not in kwargs["messages"][1]
+        assert messages[1]["reasoning_content"] == "private scratchpad"
+
     def test_gemini_native_passes_base_url_for_top_level_thinking_config(self, monkeypatch):
         agent = _make_agent(
             monkeypatch,

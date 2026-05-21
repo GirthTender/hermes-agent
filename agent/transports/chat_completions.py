@@ -119,6 +119,7 @@ class ChatCompletionsTransport(ProviderTransport):
         ``call_id``/``response_item_id`` on tool_calls) that strict
         chat-completions providers reject with 400/422.
         """
+        drop_reasoning_content = bool(kwargs.get("drop_reasoning_content"))
         needs_sanitize = False
         for msg in messages:
             if not isinstance(msg, dict):
@@ -127,6 +128,7 @@ class ChatCompletionsTransport(ProviderTransport):
                 "tool_name" in msg
                 or "codex_reasoning_items" in msg
                 or "codex_message_items" in msg
+                or (drop_reasoning_content and "reasoning_content" in msg)
             ):
                 needs_sanitize = True
                 break
@@ -154,6 +156,10 @@ class ChatCompletionsTransport(ProviderTransport):
             msg.pop("tool_name", None)
             msg.pop("codex_reasoning_items", None)
             msg.pop("codex_message_items", None)
+            if drop_reasoning_content:
+                # Groq's OpenAI-compatible endpoint rejects provider-private
+                # replay fields from Codex/Kimi-style histories.
+                msg.pop("reasoning_content", None)
             tool_calls = msg.get("tool_calls")
             if isinstance(tool_calls, list):
                 for tc in tool_calls:
@@ -217,8 +223,18 @@ class ChatCompletionsTransport(ProviderTransport):
             anthropic_max_output: int | None
             extra_body_additions: dict | None
         """
+        provider_name = str(params.get("provider_name") or "").strip().lower()
+        base_url = str(params.get("base_url") or "").strip().lower()
+        drop_reasoning_content = (
+            "groq" in provider_name
+            or "api.groq.com" in base_url
+        )
+
         # Codex sanitization: drop reasoning_items / call_id / response_item_id
-        sanitized = self.convert_messages(messages)
+        sanitized = self.convert_messages(
+            messages,
+            drop_reasoning_content=drop_reasoning_content,
+        )
 
         # ── Provider profile: single-path when present ──────────────────
         _profile = params.get("provider_profile")
@@ -325,7 +341,6 @@ class ChatCompletionsTransport(ProviderTransport):
         is_openrouter = params.get("is_openrouter", False)
         is_nous = params.get("is_nous", False)
         is_github_models = params.get("is_github_models", False)
-        provider_name = str(params.get("provider_name") or "").strip().lower()
         base_url = params.get("base_url")
 
         provider_prefs = params.get("provider_preferences")
