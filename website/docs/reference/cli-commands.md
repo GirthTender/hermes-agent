@@ -217,6 +217,12 @@ Subcommands:
 | `uninstall` | Remove the installed service. |
 | `setup` | Interactive messaging-platform setup. |
 
+Quick decision:
+
+- Use `hermes gateway run` when you want the gateway tied to the current terminal session.
+- Use `hermes gateway start` only after `hermes gateway install` has created the service.
+- Use `hermes gateway restart --all` when you want to restart every profile's gateway after a shared config change.
+
 Options:
 
 | Option | Description |
