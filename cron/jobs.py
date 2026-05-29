@@ -178,6 +178,8 @@ def parse_duration(s: str) -> int:
         raise ValueError(f"Invalid duration: '{s}'. Use format like '30m', '2h', or '1d'")
     
     value = int(match.group(1))
+    if value <= 0:
+        raise ValueError("Duration must be positive")
     unit = match.group(2)[0]  # First char: m, h, or d
     
     multipliers = {'m': 1, 'h': 60, 'd': 1440}

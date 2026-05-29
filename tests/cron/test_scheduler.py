@@ -359,6 +359,52 @@ class TestResolveDeliveryTarget:
             "thread_id": None,
         }
 
+    def test_explicit_unknown_platform_target_is_rejected(self):
+        """deliver='unknown:target' should not fabricate a target for unknown platforms."""
+        assert _resolve_delivery_target({"deliver": "totally_unknown:abc"}) is None
+
+    def test_explicit_unknown_platform_target_rejection_is_logged(self, caplog):
+        """Rejected explicit delivery platforms should leave an operator-facing breadcrumb."""
+        job = {"id": "job-123", "deliver": "totally_unknown:abc"}
+
+        with caplog.at_level(logging.WARNING, logger="cron.scheduler"):
+            assert _resolve_delivery_target(job) is None
+
+        assert any(
+            "unknown platform 'totally_unknown'" in record.message
+            and "totally_unknown:abc" in record.message
+            and "job-123" in record.message
+            for record in caplog.records
+        )
+
+    def test_explicit_unknown_platform_target_dropped_from_multi_target(self):
+        """Unknown colon-form targets are skipped while valid targets still resolve."""
+        from cron.scheduler import _resolve_delivery_targets
+
+        targets = _resolve_delivery_targets(
+            {"deliver": "totally_unknown:abc,telegram:-1003724596514:17"}
+        )
+
+        assert targets == [
+            {
+                "platform": "telegram",
+                "chat_id": "-1003724596514",
+                "thread_id": "17",
+            }
+        ]
+
+    def test_explicit_plugin_platform_target_is_allowed(self):
+        """Plugin platforms registered for cron delivery still accept explicit targets."""
+        with patch(
+            "cron.scheduler._plugin_cron_env_var",
+            side_effect=lambda name: "PLUGIN_HOME_CHANNEL" if name == "customchat" else "",
+        ):
+            assert _resolve_delivery_target({"deliver": "customchat:room-42"}) == {
+                "platform": "customchat",
+                "chat_id": "room-42",
+                "thread_id": None,
+            }
+
     def test_list_form_deliver_is_normalized(self, monkeypatch):
         """deliver=['telegram'] (Python list) should resolve like 'telegram' string.
 

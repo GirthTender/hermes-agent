@@ -371,6 +371,14 @@ def _resolve_single_delivery_target(job: dict, deliver_value: str) -> Optional[d
     if ":" in deliver_value:
         platform_name, rest = deliver_value.split(":", 1)
         platform_key = platform_name.lower()
+        if not _is_known_delivery_platform(platform_key):
+            logger.warning(
+                "Job '%s': deliver target %r uses unknown platform %r; skipping",
+                job.get("name", job.get("id", "?")),
+                deliver_value,
+                platform_key,
+            )
+            return None
 
         from tools.send_message_tool import _parse_target_ref
 

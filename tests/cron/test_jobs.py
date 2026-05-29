@@ -65,6 +65,12 @@ class TestParseDuration:
         with pytest.raises(ValueError):
             parse_duration("m30")
 
+    def test_zero_duration_raises(self):
+        with pytest.raises(ValueError):
+            parse_duration("0m")
+        with pytest.raises(ValueError):
+            parse_duration("0 h")
+
 
 # =========================================================================
 # parse_schedule
@@ -107,6 +113,14 @@ class TestParseSchedule:
     def test_invalid_schedule_raises(self):
         with pytest.raises(ValueError):
             parse_schedule("not_a_schedule")
+
+    def test_zero_interval_duration_raises(self):
+        with pytest.raises(ValueError):
+            parse_schedule("every 0m")
+
+    def test_zero_oneshot_duration_raises(self):
+        with pytest.raises(ValueError):
+            parse_schedule("0m")
 
     def test_invalid_cron_raises(self):
         pytest.importorskip("croniter")
