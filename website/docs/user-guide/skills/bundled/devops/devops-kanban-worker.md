@@ -41,6 +41,12 @@ Your workspace kind determines how you should behave inside `$HERMES_KANBAN_WORK
 | `dir:<path>` | Shared persistent directory | Other runs will read what you write. Treat it like long-lived state. Path is guaranteed absolute (the kernel rejects relative paths). |
 | `worktree` | Git worktree at the resolved path | If `.git` doesn't exist, run `git worktree add <path> <branch>` from the main repo first, then cd and work normally. Commit work here. |
 
+### Shared repo / dirty-tree preflight
+
+For `dir:<path>` workspaces that are git repos, and for `worktree` workspaces, run `git status --short` before editing. Treat pre-existing dirty or untracked files as other worker/human work: do not overwrite, reformat, delete, or broadly stage them. Avoid `git add -A` and `git add .`; stage only the files your task intentionally changed.
+
+If a required file is already dirty for an unrelated reason, block instead of guessing ownership. Include a concise conflict summary with the path(s), current status, and what you needed to change. On completion—or in a review-required comment—include `changed_files` and `tests_run` in the metadata so reviewers can distinguish your changes from shared-repo noise.
+
 ## Tenant isolation
 
 If `$HERMES_TENANT` is set, the task belongs to a tenant namespace. When reading or writing persistent memory, prefix memory entries with the tenant so context doesn't leak across tenants:

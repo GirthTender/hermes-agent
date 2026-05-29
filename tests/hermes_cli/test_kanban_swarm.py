@@ -43,6 +43,37 @@ def test_create_swarm_builds_parallel_workers_verifier_and_synthesizer(tmp_path)
         conn.close()
 
 
+def test_create_swarm_idempotent_retry_returns_existing_topology_without_duplicates(tmp_path):
+    conn = kb.connect(tmp_path / "kanban.db")
+    try:
+        first = create_swarm(
+            conn,
+            goal="Collect one evidence packet and produce a memo.",
+            workers=[SwarmWorkerSpec(profile="researcher", title="Evidence", body="Find proof")],
+            verifier_assignee="reviewer",
+            synthesizer_assignee="writer",
+            idempotency_key="swarm-retry-key",
+        )
+
+        second = create_swarm(
+            conn,
+            goal="Collect one evidence packet and produce a memo.",
+            workers=[SwarmWorkerSpec(profile="researcher", title="Evidence", body="Find proof")],
+            verifier_assignee="reviewer",
+            synthesizer_assignee="writer",
+            idempotency_key="swarm-retry-key",
+        )
+
+        assert second == first
+        assert latest_blackboard(conn, first.root_id)["topology"] == first.as_dict() | {
+            "goal": "Collect one evidence packet and produce a memo."
+        }
+        task_count = conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
+        assert task_count == 4
+    finally:
+        conn.close()
+
+
 def test_swarm_blackboard_merges_structured_updates(tmp_path):
     conn = kb.connect(tmp_path / "kanban.db")
     try:

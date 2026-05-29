@@ -1,7 +1,7 @@
 ---
 name: subagent-driven-development
 description: "Execute plans via delegate_task subagents (2-stage review)."
-version: 1.1.0
+version: 1.1.1
 author: Hermes Agent (adapted from obra/superpowers)
 license: MIT
 platforms: [linux, macos, windows]
@@ -53,6 +53,24 @@ todo([
 
 **Key:** Read the plan ONCE. Extract everything. Don't make subagents read the plan file — provide the full task text directly in context.
 
+### Workspace Hygiene Pre-flight
+
+Before dispatching any implementation subagent, establish a clean operating boundary:
+
+```bash
+git status --short
+```
+
+- If the tree is dirty, identify which changes are pre-existing and which files this run is allowed to touch.
+- Do **not** overwrite, revert, format, or stage pre-existing dirty files unless they are explicitly in scope.
+- Give each implementer the allowed file/path list and the current dirty-tree constraints in its context.
+- Prefer isolated branches/worktrees for parallel or uncertain implementation work.
+- When committing, stage only explicit paths produced by the current task. Never use `git add -A`, `git add .`, or broad directory staging in a shared dirty checkout.
+
+Example boundary to include in subagent context:
+
+> Workspace is dirty. Only modify and stage `src/models/user.py` and `tests/models/test_user.py`. Do not touch or stage unrelated existing changes.
+
 ### 2. Per-Task Workflow
 
 For EACH task in the plan:
@@ -77,7 +95,8 @@ delegate_task(
     3. Write minimal implementation
     4. Run: pytest tests/models/test_user.py -v (verify PASS)
     5. Run: pytest tests/ -q (verify no regressions)
-    6. Commit: git add -A && git commit -m "feat: add User model with password hashing"
+    6. Check: git status --short
+    7. Commit only explicit task files: git add src/models/user.py tests/models/test_user.py && git commit -m "feat: add User model with password hashing"
 
     PROJECT CONTEXT:
     - Python 3.11, Flask app in src/app.py
@@ -183,8 +202,11 @@ pytest tests/ -q
 # Review all changes
 git diff --stat
 
-# Final commit if needed
-git add -A && git commit -m "feat: complete [feature name] implementation"
+# Confirm only intended files are dirty
+git status --short
+
+# Final commit if needed; stage explicit paths only
+git add <explicit implementation/test/docs files> && git commit -m "feat: complete [feature name] implementation"
 ```
 
 ## Task Granularity
@@ -205,6 +227,9 @@ git add -A && git commit -m "feat: complete [feature name] implementation"
 
 - Start implementation without a plan
 - Skip reviews (spec compliance OR code quality)
+- Start dispatching implementation subagents before checking `git status --short`
+- Use `git add -A`, `git add .`, or broad directory staging in a shared/dirty checkout
+- Overwrite, revert, format, or stage pre-existing dirty files that are outside the current task scope
 - Proceed with unfixed critical/important issues
 - Dispatch multiple implementation subagents for tasks that touch the same files
 - Make subagent read the plan file (provide full text in context instead)
@@ -336,6 +361,7 @@ Fresh subagent per task
 Two-stage review every time
 Spec compliance FIRST
 Code quality SECOND
+Check workspace first; stage explicit paths only
 Never skip reviews
 Catch issues early
 ```
