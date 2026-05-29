@@ -7,6 +7,7 @@ from tools.url_safety import (
     is_safe_url,
     is_always_blocked_url,
     _is_blocked_ip,
+    _is_always_blocked_ip,
     _global_allow_private_urls,
     _reset_allow_private_cache,
 )
@@ -429,6 +430,11 @@ class TestIsAlwaysBlockedUrl:
         "http://169.254.170.2/v2/credentials",                   # AWS ECS task metadata
         "http://100.100.100.200/latest/meta-data/",              # Alibaba Cloud
         "http://169.254.42.1/",                                  # Any /16 link-local
+        "http://[::ffff:169.254.169.254]/latest/meta-data/",     # IPv4-mapped AWS/GCP/etc.
+        "http://[::ffff:169.254.170.2]/v2/credentials",           # IPv4-mapped AWS ECS
+        "http://[::ffff:169.254.169.253]/metadata/instance",      # IPv4-mapped Azure
+        "http://[::ffff:100.100.100.200]/latest/meta-data/",      # IPv4-mapped Alibaba
+        "http://[::ffff:169.254.42.1]/",                         # IPv4-mapped link-local
     ])
     def test_literal_imds_ips_always_blocked(self, url):
         """Literal IMDS IPs and the /16 link-local range always block."""
@@ -446,6 +452,24 @@ class TestIsAlwaysBlockedUrl:
         ]):
             assert is_always_blocked_url("http://attacker-controlled.example.com/") is True
 
+    def test_hostname_resolving_to_ipv4_mapped_link_local_always_blocked(self):
+        """IPv4-mapped link-local DNS answers stay in the always-blocked floor."""
+        with patch("socket.getaddrinfo", return_value=[
+            (10, 1, 6, "", ("::ffff:169.254.42.99", 0, 0, 0)),
+        ]):
+            assert is_always_blocked_url("http://attacker-controlled.example.com/") is True
+
+    @pytest.mark.parametrize("ip_str", [
+        "::ffff:169.254.169.254",
+        "::ffff:169.254.170.2",
+        "::ffff:169.254.169.253",
+        "::ffff:100.100.100.200",
+        "::ffff:169.254.42.99",
+    ])
+    def test_ipv4_mapped_ips_match_always_blocked_floor(self, ip_str):
+        """Helper normalizes mapped IPv6 so future IPv4 sentinels stay covered."""
+        assert _is_always_blocked_ip(ipaddress.ip_address(ip_str)) is True
+
     # -- Things the floor must NOT block ----------------------------------------
 
     def test_public_url_not_blocked(self):
@@ -457,6 +481,9 @@ class TestIsAlwaysBlockedUrl:
         "http://10.0.0.5/",
         "http://172.16.0.1/",
         "http://100.64.0.1/",  # CGNAT — blocked by is_safe_url but not by the floor
+        "http://[::ffff:127.0.0.1]/",
+        "http://[::ffff:10.0.0.5]/",
+        "http://[::ffff:100.64.0.1]/",
     ])
     def test_ordinary_private_urls_not_in_floor(self, url):
         """Floor is narrower than is_safe_url — ordinary private URLs pass."""

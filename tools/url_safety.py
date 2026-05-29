@@ -46,10 +46,10 @@ _BLOCKED_HOSTNAMES = frozenset({
 # endpoints — the #1 SSRF target — and the link-local range where
 # they all live.
 #
-# IPv4-mapped IPv6 variants are included because DNS resolvers may
-# return ``::ffff:x.x.x.x`` for IPv4-only hosts, and Python's
-# ipaddress module treats these as distinct from the plain IPv4
-# address (they won't match ``ip in frozenset`` or ``ip in network``).
+# IPv4-mapped IPv6 variants are included as explicit sentinels for the known
+# metadata endpoints.  The _is_always_blocked_ip() helper below also checks the
+# embedded IPv4 address so future IPv4-only sentinels do not need a separately
+# maintained ``::ffff:x.x.x.x`` entry.
 _ALWAYS_BLOCKED_IPS = frozenset({
     ipaddress.ip_address("169.254.169.254"),  # AWS/GCP/Azure/DO/Oracle metadata
     ipaddress.ip_address("169.254.170.2"),     # AWS ECS task metadata (task IAM creds)
@@ -146,6 +146,29 @@ def _reset_allow_private_cache() -> None:
     _cached_allow_private = False
 
 
+def _matches_always_blocked_floor(
+    ip: ipaddress.IPv4Address | ipaddress.IPv6Address,
+) -> bool:
+    """Return True when an IP is in the non-negotiable metadata floor."""
+    return ip in _ALWAYS_BLOCKED_IPS or any(
+        ip in net for net in _ALWAYS_BLOCKED_NETWORKS
+    )
+
+
+def _is_always_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """Return True if the IP should always be blocked regardless of config.
+
+    IPv4-mapped IPv6 addresses (``::ffff:x.x.x.x``) are normalized through
+    their embedded IPv4 address so adding a new IPv4 metadata sentinel does not
+    require a second mapped-IPv6 entry to preserve the security floor.
+    """
+    if _matches_always_blocked_floor(ip):
+        return True
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        return _matches_always_blocked_floor(ip.ipv4_mapped)
+    return False
+
+
 def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     """Return True if the IP should be blocked for SSRF protection."""
     # IPv4-mapped IPv6 addresses (``::ffff:x.x.x.x``) should be checked
@@ -218,9 +241,7 @@ def is_always_blocked_url(url: str) -> bool:
             ip = None
 
         if ip is not None:
-            if ip in _ALWAYS_BLOCKED_IPS or any(
-                ip in net for net in _ALWAYS_BLOCKED_NETWORKS
-            ):
+            if _is_always_blocked_ip(ip):
                 logger.warning(
                     "Blocked request to cloud metadata address "
                     "(always-blocked floor): %s",
@@ -244,9 +265,7 @@ def is_always_blocked_url(url: str) -> bool:
                 resolved = ipaddress.ip_address(ip_str)
             except ValueError:
                 continue
-            if resolved in _ALWAYS_BLOCKED_IPS or any(
-                resolved in net for net in _ALWAYS_BLOCKED_NETWORKS
-            ):
+            if _is_always_blocked_ip(resolved):
                 logger.warning(
                     "Blocked request to cloud metadata address "
                     "(always-blocked floor): %s -> %s",
@@ -317,7 +336,7 @@ def is_safe_url(url: str) -> bool:
                 continue
 
             # Always block cloud metadata IPs and link-local, even with toggle on
-            if ip in _ALWAYS_BLOCKED_IPS or any(ip in net for net in _ALWAYS_BLOCKED_NETWORKS):
+            if _is_always_blocked_ip(ip):
                 logger.warning(
                     "Blocked request to cloud metadata address: %s -> %s",
                     hostname, ip_str,
