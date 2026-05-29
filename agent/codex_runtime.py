@@ -245,7 +245,7 @@ def run_codex_stream(agent, api_kwargs: dict, client: Any = None, on_first_delta
                 # but get_final_response() can return an empty output list.
                 # Backfill from collected items or synthesize from deltas.
                 _out = getattr(final_response, "output", None)
-                if isinstance(_out, list) and not _out:
+                if _out is None or (isinstance(_out, list) and not _out):
                     if collected_output_items:
                         final_response.output = list(collected_output_items)
                         logger.debug(
@@ -329,6 +329,24 @@ def run_codex_stream(agent, api_kwargs: dict, client: Any = None, on_first_delta
                 )
                 return agent._run_codex_create_stream_fallback(api_kwargs, client=active_client)
             raise
+        except TypeError as exc:
+            err_text = str(exc)
+            # The OpenAI SDK Responses stream accumulator assumes terminal
+            # responses always carry an iterable ``response.output``. The
+            # chatgpt.com Codex backend can emit ``output: null`` while the
+            # useful answer has already arrived as stream deltas/items, which
+            # makes the SDK raise here before Hermes can backfill. Route that
+            # specific SDK shape through the lower-level create(stream=True)
+            # fallback, which consumes events directly.
+            if "'NoneType' object is not iterable" in err_text:
+                logger.debug(
+                    "Responses stream terminal response had output=None; "
+                    "falling back to create(stream=True). %s",
+                    agent._client_log_context(),
+                    exc_info=True,
+                )
+                return agent._run_codex_create_stream_fallback(api_kwargs, client=active_client)
+            raise
 
 
 
@@ -408,7 +426,7 @@ def run_codex_create_stream_fallback(agent, api_kwargs: dict, client: Any = None
             if terminal_response is not None:
                 # Backfill empty output from collected stream events
                 _out = getattr(terminal_response, "output", None)
-                if isinstance(_out, list) and not _out:
+                if _out is None or (isinstance(_out, list) and not _out):
                     if collected_output_items:
                         terminal_response.output = list(collected_output_items)
                         logger.debug(
