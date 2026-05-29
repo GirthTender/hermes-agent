@@ -7092,7 +7092,7 @@ class GatewayRunner:
         # vs group). When unset → backward-compat: every allowed user can
         # run every command. When set → non-admins can run only commands in
         # ``user_allowed_commands`` (plus the always-allowed floor: /help,
-        # /whoami). Plain chat is unaffected — only slash commands gate.
+        # /status, /whoami). Plain chat is unaffected — only slash commands gate.
         if command and canonical and is_gateway_known_command(canonical):
             _denied = self._check_slash_access(source, canonical)
             if _denied is not None:
@@ -9175,7 +9175,12 @@ class GatewayRunner:
             source.platform.value if source.platform else "?",
             source.user_id,
         )
-        allowed_preview = sorted(policy.user_allowed_commands)
+        # Include the implicit read-only floor in denial previews so users
+        # still see commands they can run when user_allowed_commands is empty.
+        allowed_preview = ["help", "status", "whoami"]
+        for _cmd in sorted(policy.user_allowed_commands):
+            if _cmd not in allowed_preview:
+                allowed_preview.append(_cmd)
         if allowed_preview:
             suffix = (
                 "You can run: "
@@ -9226,7 +9231,7 @@ class GatewayRunner:
             )
 
         # Non-admin user. Show what's actually reachable.
-        floor = ["help", "whoami"]  # mirrors slash_access._ALWAYS_ALLOWED_FOR_USERS
+        floor = ["help", "status", "whoami"]  # mirrors slash_access._ALWAYS_ALLOWED_FOR_USERS
         configured = sorted(policy.user_allowed_commands)
         # Combine + dedupe, preserve order: floor first, then operator additions.
         seen: set[str] = set()

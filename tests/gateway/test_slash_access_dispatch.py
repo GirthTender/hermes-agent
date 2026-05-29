@@ -12,7 +12,7 @@ Coverage targets:
   - User path: user not in admin list, but command in
     ``user_allowed_commands`` → allowed.
   - User denied: command not in either list → returns the ⛔ denial.
-  - Always-allowed floor: /help and /whoami reachable for non-admins
+  - Always-allowed floor: /help, /status, and /whoami reachable for non-admins
     even with empty user_allowed_commands.
   - DM vs group scope isolation.
 """
@@ -180,10 +180,14 @@ async def test_non_admin_with_empty_user_commands_gets_floor_only():
     # /stop denied
     result = await runner._handle_message(_make_event("/stop", _make_source(user_id="999")))
     assert "⛔" in result
-    assert "No slash commands are enabled" in result
-    # /whoami still works (always-allowed floor)
+    assert "/status" in result
+    # /status and /whoami still work (always-allowed floor)
+    runner._handle_status_command = AsyncMock(return_value="status-handled")
+    status_result = await runner._handle_message(_make_event("/status", _make_source(user_id="999")))
+    assert status_result == "status-handled"
     whoami_result = await runner._handle_message(_make_event("/whoami", _make_source(user_id="999")))
     assert "Tier: user" in whoami_result
+    assert "/status" in whoami_result
 
 
 # ---------------------------------------------------------------------------
@@ -255,6 +259,25 @@ async def test_dm_admin_is_not_group_admin():
         _make_event("/stop", _make_source(user_id="111", chat_type="group"))
     )
     assert "⛔" in result
+
+
+@pytest.mark.asyncio
+async def test_group_non_admin_empty_user_commands_can_run_and_see_status():
+    runner = _make_runner(
+        platform_extra={
+            "group_allow_admin_from": ["222"],
+            "group_user_allowed_commands": [],
+        }
+    )
+    src = _make_source(user_id="999", chat_type="group", chat_id="g1")
+    runner._handle_status_command = AsyncMock(return_value="status-handled")
+
+    status_result = await runner._handle_message(_make_event("/status", src))
+    assert status_result == "status-handled"
+
+    whoami_result = await runner._handle_message(_make_event("/whoami", src))
+    assert "Tier: user" in whoami_result
+    assert "/status" in whoami_result
 
 
 @pytest.mark.asyncio

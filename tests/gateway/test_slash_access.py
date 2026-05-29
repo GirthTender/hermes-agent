@@ -63,12 +63,13 @@ class TestPolicyFromExtra:
         assert p.can_run("999", "kanban") is False
 
     def test_always_allowed_floor_for_non_admin(self):
-        # /help and /whoami always reachable so users can see what they can do.
+        # /help, /status, and /whoami always reachable for read-only visibility.
         p = policy_from_extra(
             {"allow_admin_from": ["111"], "user_allowed_commands": []},
             "dm",
         )
         assert p.can_run("999", "help") is True
+        assert p.can_run("999", "status") is True
         assert p.can_run("999", "whoami") is True
         assert p.can_run("999", "stop") is False
 
@@ -221,10 +222,9 @@ class TestPolicyForSource:
         p = policy_for_source(cfg, grp_src)
         assert p.is_admin("222") is True
         assert p.is_admin("111") is False  # DM admin, not group admin
-        # In group scope, the only listed user command is "help"; "status"
-        # is not in the group list and should be denied for non-admins.
+        # In group scope, "status" is still available via the read-only floor.
         assert p.can_run("999", "help") is True
-        assert p.can_run("999", "status") is False
+        assert p.can_run("999", "status") is True
 
     def test_channel_thread_chat_types_treated_as_group_scope(self):
         # Discord channels and threads are group-scoped, not DM-scoped.
