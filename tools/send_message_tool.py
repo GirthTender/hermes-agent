@@ -166,8 +166,31 @@ def _handle_list():
         return json.dumps(_error(f"Failed to load channel directory: {e}"))
 
 
+def _reload_hermes_env_for_send():
+    """Refresh ~/.hermes/.env so home-channel changes apply in long-lived agents."""
+    try:
+        from dotenv import load_dotenv
+        from hermes_constants import get_hermes_home
+    except Exception:
+        return
+
+    env_path = get_hermes_home() / ".env"
+    if not env_path.exists():
+        return
+    try:
+        load_dotenv(str(env_path), override=True, encoding="utf-8")
+    except UnicodeDecodeError:
+        try:
+            load_dotenv(str(env_path), override=True, encoding="latin-1")
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+
 def _handle_send(args):
     """Send a message to a platform target."""
+    _reload_hermes_env_for_send()
     target = args.get("target", "")
     message = args.get("message", "")
     if not target or not message:

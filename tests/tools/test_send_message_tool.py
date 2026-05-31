@@ -30,6 +30,7 @@ from gateway.config import Platform
 from tools.send_message_tool import (
     _is_telegram_thread_not_found,
     _parse_target_ref,
+    _reload_hermes_env_for_send,
     _send_matrix_via_adapter,
     _send_signal,
     _send_telegram,
@@ -165,6 +166,67 @@ def _ensure_slack_mock(monkeypatch):
 
 
 class TestSendMessageTool:
+    def test_send_refreshes_hermes_env_before_gateway_config(self, tmp_path, monkeypatch):
+        from hermes_constants import reset_hermes_home_override, set_hermes_home_override
+
+        home = tmp_path / "hermes-home"
+        home.mkdir()
+        (home / ".env").write_text("HERMES_SEND_TEST_VALUE=fresh\n", encoding="utf-8")
+        monkeypatch.setenv("HERMES_SEND_TEST_VALUE", "stale")
+        token = set_hermes_home_override(home)
+
+        config, telegram_cfg = _make_config()
+        seen_values = []
+
+        def fake_load_gateway_config():
+            seen_values.append(os.environ.get("HERMES_SEND_TEST_VALUE"))
+            return config
+
+        try:
+            with patch("gateway.config.load_gateway_config", side_effect=fake_load_gateway_config), \
+                 patch("tools.interrupt.is_interrupted", return_value=False), \
+                 patch("model_tools._run_async", side_effect=_run_async_immediately), \
+                 patch("tools.send_message_tool._send_to_platform", new=AsyncMock(return_value={"success": True})) as send_mock, \
+                 patch("gateway.mirror.mirror_to_session", return_value=True):
+                result = json.loads(
+                    send_message_tool(
+                        {
+                            "action": "send",
+                            "target": "telegram:-1001",
+                            "message": "hello",
+                        }
+                    )
+                )
+        finally:
+            reset_hermes_home_override(token)
+
+        assert result["success"] is True
+        assert seen_values == ["fresh"]
+        send_mock.assert_awaited_once_with(
+            Platform.TELEGRAM,
+            telegram_cfg,
+            "-1001",
+            "hello",
+            thread_id=None,
+            media_files=[],
+            force_document=False,
+        )
+
+    def test_reload_hermes_env_for_send_falls_back_to_latin1(self, tmp_path, monkeypatch):
+        from hermes_constants import reset_hermes_home_override, set_hermes_home_override
+
+        home = tmp_path / "hermes-home"
+        home.mkdir()
+        (home / ".env").write_bytes("HERMES_SEND_LATIN1=caf\xe9\n".encode("latin-1"))
+        monkeypatch.delenv("HERMES_SEND_LATIN1", raising=False)
+        token = set_hermes_home_override(home)
+        try:
+            _reload_hermes_env_for_send()
+        finally:
+            reset_hermes_home_override(token)
+
+        assert os.environ["HERMES_SEND_LATIN1"] == "café"
+
     def test_cron_duplicate_target_is_skipped_and_explained(self):
         home = SimpleNamespace(chat_id="-1001")
         config, _telegram_cfg = _make_config()
