@@ -202,6 +202,7 @@ def test_native_client_uses_x_goog_api_key_and_native_models_endpoint(monkeypatc
     ("google/gemini-2.0-flash", "gemini-2.0-flash"),
     ("gemini/gemini-3-pro-preview", "gemini-3-pro-preview"),
     ("Google/Gemini-2.5-Pro", "Gemini-2.5-Pro"),   # prefix match is case-insensitive; model casing preserved
+    ("  Google / Gemini-2.5-Pro  ", "Gemini-2.5-Pro"),  # whitespace around a copied self-prefix is ignored
     ("gemini-2.5-flash", "gemini-2.5-flash"),       # bare id unchanged
     ("models/gemini-x", "models/gemini-x"),         # non-self prefix unchanged
     ("tunedModels/my-tune", "tunedModels/my-tune"),  # legit Gemini namespaced id unchanged
@@ -256,6 +257,53 @@ def test_native_client_strips_self_prefix_from_model_url(monkeypatch):
         "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
     )
     assert "models/google/" not in recorded["url"]
+
+
+def test_native_stream_strips_whitespace_and_casing_self_prefix_from_model_url(monkeypatch):
+    """Streaming uses the same normalized native model id as non-streaming calls."""
+    from agent.gemini_native_adapter import GeminiNativeClient
+
+    recorded = {}
+
+    class DummyStreamResponse:
+        status_code = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def iter_text(self):
+            yield 'data: {"candidates":[{"content":{"parts":[{"text":"ok"}]},"finishReason":"STOP"}]}\n'
+            yield "data: [DONE]\n"
+
+    class DummyHTTP:
+        def stream(self, method, url, json=None, headers=None, timeout=None):
+            recorded["method"] = method
+            recorded["url"] = url
+            recorded["headers"] = headers
+            return DummyStreamResponse()
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr("agent.gemini_native_adapter.httpx.Client", lambda *a, **k: DummyHTTP())
+
+    client = GeminiNativeClient(api_key="AIza-test", base_url="https://generativelanguage.googleapis.com/v1beta")
+    chunks = list(client.chat.completions.create(
+        model="  Google / Gemini-2.5-Pro  ",
+        messages=[{"role": "user", "content": "Hello"}],
+        stream=True,
+    ))
+
+    assert recorded["method"] == "POST"
+    assert recorded["url"] == (
+        "https://generativelanguage.googleapis.com/v1beta/models/Gemini-2.5-Pro:streamGenerateContent?alt=sse"
+    )
+    assert "models/Google" not in recorded["url"]
+    assert recorded["headers"]["Accept"] == "text/event-stream"
+    assert chunks[0].choices[0].delta.content == "ok"
 
 
 def test_native_http_error_keeps_status_and_retry_after():

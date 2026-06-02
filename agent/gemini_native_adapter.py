@@ -60,6 +60,11 @@ def bare_gemini_model_id(model: str) -> str:
         'gemini-2.5-flash'
     """
     name = (model or "").strip()
+    if "/" in name:
+        prefix, remainder = name.split("/", 1)
+        normalized_prefix = prefix.strip().lower()
+        if f"{normalized_prefix}/" in _GEMINI_SELF_PREFIXES and remainder.strip():
+            return remainder.strip()
     lowered = name.lower()
     for prefix in _GEMINI_SELF_PREFIXES:
         if lowered.startswith(prefix):
