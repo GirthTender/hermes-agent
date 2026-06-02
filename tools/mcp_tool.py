@@ -1522,6 +1522,8 @@ class MCPServerTask:
             client_kwargs["cert"] = client_cert
 
         probe_headers = dict(headers) if headers else {}
+        if not any(key.lower() == "mcp-protocol-version" for key in probe_headers):
+            probe_headers["mcp-protocol-version"] = LATEST_PROTOCOL_VERSION
         try:
             async with _httpx.AsyncClient(**client_kwargs) as client:
                 # HEAD is cheapest; fall back to GET if the server doesn't

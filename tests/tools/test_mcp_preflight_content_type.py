@@ -19,7 +19,7 @@ from contextlib import contextmanager
 
 import pytest
 
-from tools.mcp_tool import MCPServerTask, NonMcpEndpointError
+from tools.mcp_tool import LATEST_PROTOCOL_VERSION, MCPServerTask, NonMcpEndpointError
 
 
 def _make_task(name: str = "probe_srv") -> MCPServerTask:
@@ -235,3 +235,29 @@ def test_ssl_verify_and_cert_forwarded(monkeypatch):
     assert captured.get("verify") is False
     assert captured.get("cert") == "/path/to/cert.pem"
     assert captured.get("follow_redirects") is True
+
+
+def test_default_protocol_version_header_forwarded_to_probe(monkeypatch):
+    captured: dict = {}
+
+    import httpx
+
+    class _FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def head(self, url, headers=None):
+            captured["headers"] = dict(headers or {})
+            return httpx.Response(200, headers={"content-type": "application/json"})
+
+    monkeypatch.setattr(httpx, "AsyncClient", _FakeClient)
+    task = _make_task()
+    asyncio.run(task._preflight_content_type("https://mcp.example.com/mcp"))
+
+    assert captured["headers"] == {"mcp-protocol-version": LATEST_PROTOCOL_VERSION}
