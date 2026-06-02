@@ -17,6 +17,7 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 from hermes_constants import get_hermes_home
 from hermes_cli.config import cfg_get
@@ -152,11 +153,12 @@ def _normalize_github_browser_url(url: str) -> str:
     unchanged — callers (and ``git clone``) will handle them as-is.
     """
     # Only normalize https://github.com/... URLs.  Leave gitlab, bitbucket,
-    # custom hosts, ssh URLs, and file:// alone.
-    prefix = "https://github.com/"
-    if not url.startswith(prefix):
+    # custom hosts, ssh URLs, and file:// alone.  URL host names are
+    # case-insensitive, so accept browser/input variants like GitHub.com too.
+    parsed = urlparse(url)
+    if parsed.scheme != "https" or parsed.netloc.lower() != "github.com":
         return url
-    rest = url[len(prefix):].strip("/")
+    rest = parsed.path.strip("/")
     parts = rest.split("/")
     if len(parts) < 2:
         return url

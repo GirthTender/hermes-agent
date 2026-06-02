@@ -156,6 +156,10 @@ class TestResolveGitUrl:
         url = _resolve_git_url("https://github.com/owner/repo/pull/123")
         assert url == "https://github.com/owner/repo.git"
 
+    def test_github_pull_url_with_case_insensitive_host_normalized_to_repo(self):
+        url = _resolve_git_url("https://GitHub.com/owner/repo/pull/123")
+        assert url == "https://github.com/owner/repo.git"
+
     def test_github_commit_url_normalized_to_repo(self):
         url = _resolve_git_url(
             "https://github.com/owner/repo/commit/abc123def"
