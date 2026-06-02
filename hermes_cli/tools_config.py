@@ -1473,6 +1473,20 @@ def _save_platform_tools(config: dict, platform: str, enabled_toolset_keys: Set[
     # Merge preserved entries with new enabled toolsets
     config["platform_toolsets"][platform] = sorted(enabled_toolset_keys | preserved_entries)
 
+    # A saved tools selection is an explicit re-enable signal. Blank Slate setup
+    # seeds agent.disabled_toolsets as a global hard-suppression list to keep the
+    # initial experience file/terminal-only, but _get_platform_tools applies that
+    # list last. If we leave newly selected toolsets in it, `hermes tools` appears
+    # to save the user's choice while the resolver silently strips it back out.
+    agent_cfg = config.get("agent")
+    if isinstance(agent_cfg, dict):
+        disabled = agent_cfg.get("disabled_toolsets")
+        if isinstance(disabled, list) and disabled:
+            enabled_names = {str(ts) for ts in enabled_toolset_keys}
+            remaining_disabled = [ts for ts in disabled if str(ts) not in enabled_names]
+            if remaining_disabled != disabled:
+                agent_cfg["disabled_toolsets"] = remaining_disabled
+
     # Track which plugin toolsets are "known" for this platform so we can
     # distinguish "new plugin, default enabled" from "user disabled it".
     if plugin_keys:

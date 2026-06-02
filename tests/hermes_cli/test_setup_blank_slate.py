@@ -59,6 +59,29 @@ class TestBlankSlateMinimalToolsets:
         assert names == ["patch", "process", "read_file", "search_files",
                          "terminal", "write_file"]
 
+    def test_tools_enable_clears_blank_slate_global_suppression(self, monkeypatch):
+        """Blank Slate should not permanently block later `hermes tools enable`.
+
+        The setup baseline writes both an explicit CLI selection and
+        agent.disabled_toolsets. Enabling a toolset through the normal tools
+        config path must remove that toolset from the global suppression list;
+        otherwise _get_platform_tools applies disabled_toolsets last and the
+        user's re-enabled tool never becomes active.
+        """
+        from hermes_cli.tools_config import _apply_toolset_change, _get_platform_tools
+
+        cfg = {}
+        _blank_slate_minimal_toolsets(cfg)
+        _blank_slate_minimize_config(cfg)
+        assert _get_platform_tools(cfg, "cli") == {"file", "terminal"}
+        assert "web" in cfg["agent"]["disabled_toolsets"]
+        monkeypatch.setattr("hermes_cli.tools_config.save_config", lambda config: None)
+
+        _apply_toolset_change(cfg, "cli", ["web"], "enable")
+
+        assert "web" in _get_platform_tools(cfg, "cli")
+        assert "web" not in cfg["agent"]["disabled_toolsets"]
+
 
 class TestBlankSlateMinimizeConfig:
     def test_optional_features_turned_off(self):
