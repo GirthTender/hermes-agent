@@ -996,17 +996,23 @@ def _format_responses_error(error_obj: Any, response_status: str) -> str:
     default referencing the response status when no error payload is
     available at all. Adapted from anomalyco/opencode#28757.
     """
-    # Pull code and message from either dict or attribute-style payloads.
+    # Pull code/type and message from either dict or attribute-style payloads.
+    # Some Responses-compatible providers populate ``type`` instead of
+    # ``code``; treat it as the failure discriminator when ``code`` is absent.
     code: Any = None
+    error_type: Any = None
     message: Any = None
     if isinstance(error_obj, dict):
         code = error_obj.get("code")
+        error_type = error_obj.get("type")
         message = error_obj.get("message")
     elif error_obj is not None:
         code = getattr(error_obj, "code", None)
+        error_type = getattr(error_obj, "type", None)
         message = getattr(error_obj, "message", None)
 
-    code_str = str(code).strip() if isinstance(code, str) else (str(code).strip() if code else "")
+    discriminator = code if code else error_type
+    code_str = str(discriminator).strip() if isinstance(discriminator, str) else (str(discriminator).strip() if discriminator else "")
     message_str = str(message).strip() if isinstance(message, str) else (str(message).strip() if message else "")
 
     if code_str and message_str:

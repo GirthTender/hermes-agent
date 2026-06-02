@@ -101,6 +101,16 @@ def test_format_responses_error_code_only_when_message_missing():
     assert _format_responses_error(err, "failed") == "server_error"
 
 
+def test_format_responses_error_type_and_message_when_code_missing():
+    err = {"type": "server_error", "message": "backend cancelled"}
+    assert _format_responses_error(err, "cancelled") == "server_error: backend cancelled"
+
+
+def test_format_responses_error_type_only_when_message_empty():
+    err = {"type": "invalid_request_error", "message": ""}
+    assert _format_responses_error(err, "failed") == "invalid_request_error"
+
+
 def test_format_responses_error_attribute_style_payload():
     # SDK objects expose ``code``/``message`` as attributes rather than dict
     # keys. The helper must accept both shapes since the Responses SDK
@@ -173,4 +183,21 @@ def test_normalize_codex_response_failed_with_message_only():
         error={"message": "model error"},
     )
     with pytest.raises(RuntimeError, match=r"^model error$"):
+        _normalize_codex_response(response)
+
+
+def test_normalize_codex_response_cancelled_includes_type_in_error():
+    response = SimpleNamespace(
+        status="cancelled",
+        output=[
+            SimpleNamespace(
+                type="message",
+                role="assistant",
+                status="incomplete",
+                content=[SimpleNamespace(type="output_text", text="partial")],
+            ),
+        ],
+        error=SimpleNamespace(type="server_error", message="backend cancelled"),
+    )
+    with pytest.raises(RuntimeError, match=r"^server_error: backend cancelled$"):
         _normalize_codex_response(response)
