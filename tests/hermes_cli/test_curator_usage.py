@@ -62,6 +62,17 @@ def test_usage_sort_activity_orders_most_used_first(monkeypatch, capsys):
     assert out.index("bundled-skill") < out.index("agent-skill")
 
 
+def test_usage_sort_recent_orders_most_recent_first_and_sinks_never_active(monkeypatch, capsys):
+    import hermes_cli.curator as curator_cli
+    import tools.skill_usage as skill_usage
+
+    monkeypatch.setattr(skill_usage, "usage_report", _fake_rows)
+    args = SimpleNamespace(sort="recent", provenance=None, json=False)
+    assert curator_cli._cmd_usage(args) == 0
+    out = capsys.readouterr().out
+    assert out.index("bundled-skill") < out.index("agent-skill") < out.index("hub-skill")
+
+
 def test_usage_provenance_filter(monkeypatch, capsys):
     import hermes_cli.curator as curator_cli
     import tools.skill_usage as skill_usage
@@ -73,6 +84,17 @@ def test_usage_provenance_filter(monkeypatch, capsys):
     assert "bundled-skill" in out
     assert "agent-skill" not in out
     assert "hub-skill" not in out
+
+
+def test_usage_json_honors_provenance_filter(monkeypatch, capsys):
+    import hermes_cli.curator as curator_cli
+    import tools.skill_usage as skill_usage
+
+    monkeypatch.setattr(skill_usage, "usage_report", _fake_rows)
+    args = SimpleNamespace(sort="activity", provenance="hub", json=True)
+    assert curator_cli._cmd_usage(args) == 0
+    data = json.loads(capsys.readouterr().out)
+    assert [r["name"] for r in data] == ["hub-skill"]
 
 
 def test_usage_json_output(monkeypatch, capsys):
