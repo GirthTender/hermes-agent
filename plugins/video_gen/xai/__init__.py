@@ -362,9 +362,10 @@ class XAIVideoGenProvider(VideoGenProvider):
 
         prompt = (prompt or "").strip()
         image_url_norm = _image_ref_to_xai_url(image_url or "") or None
+        refs = _normalize_reference_images(reference_image_urls)
         normalized_aspect_ratio = (aspect_ratio or DEFAULT_ASPECT_RATIO).strip()
         normalized_resolution = (resolution or DEFAULT_RESOLUTION).strip().lower()
-        modality_used = "image" if image_url_norm else "text"
+        modality_used = "image" if image_url_norm or refs else "text"
         resolved_model = _resolve_model_for_modality(
             model,
             modality=modality_used,
@@ -381,7 +382,6 @@ class XAIVideoGenProvider(VideoGenProvider):
                 provider="xai", prompt=prompt,
             )
 
-        refs = _normalize_reference_images(reference_image_urls)
         if refs and len(refs) > MAX_REFERENCE_IMAGES:
             return error_response(
                 error=f"reference_image_urls supports at most {MAX_REFERENCE_IMAGES} images on xAI",

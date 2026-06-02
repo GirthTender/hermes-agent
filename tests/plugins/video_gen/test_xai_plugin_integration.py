@@ -149,7 +149,7 @@ class TestXAIPayload:
 
     def test_reference_images_payload(self, xai_provider):
         provider, captured = xai_provider
-        provider.generate(
+        result = provider.generate(
             "keep this character",
             reference_image_urls=[
                 "https://example.com/a.png",
@@ -157,6 +157,9 @@ class TestXAIPayload:
             ],
         )
         payload = _last_post(captured)["json"]
+        assert payload["model"] == "grok-imagine-video-1.5-preview"
+        assert result["model"] == "grok-imagine-video-1.5-preview"
+        assert result["modality"] == "image"
         assert payload["reference_images"] == [
             {"url": "https://example.com/a.png"},
             {"url": "https://example.com/b.png"},
