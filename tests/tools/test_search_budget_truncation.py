@@ -169,6 +169,34 @@ class TestRgContentSearchBudget:
         assert result.truncated is True
         assert result.limit_reason == "search_timeout"
 
+    def test_context_timeout_parses_dash_numbers_in_context_content(self, mock_env, monkeypatch):
+        """Context-mode timeout partials must not treat dash-number text in
+        context content as the file/line separator when the real path is known
+        from a nearby match line."""
+        def side_effect(command, **kwargs):
+            if "test -e" in command:
+                return {"output": "exists", "returncode": 0}
+            if "command -v" in command:
+                return {"output": "yes", "returncode": 0}
+            partial = [
+                "src/file-12-name.py-7-before mentions ticket -42- here",
+                "src/file-12-name.py:8:foo()",
+            ]
+            return {"output": _timeout_output(partial), "returncode": 124}
+
+        mock_env.execute.side_effect = side_effect
+        ops = ShellFileOperations(mock_env)
+        monkeypatch.setattr(ops, "_has_command", lambda c: c == "rg")
+        result = ops.search("foo", path="/big/tree", target="content", context=1)
+
+        assert result.error is None
+        assert result.truncated is True
+        assert result.limit_reason == "search_timeout"
+        assert [(m.path, m.line_number, m.content) for m in result.matches] == [
+            ("src/file-12-name.py", 7, "before mentions ticket -42- here"),
+            ("src/file-12-name.py", 8, "foo()"),
+        ]
+
     def test_content_count_timeout(self, mock_env, monkeypatch):
         def side_effect(command, **kwargs):
             if "test -e" in command:
