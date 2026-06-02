@@ -18,6 +18,7 @@ import zipfile
 
 from tools.read_extract import (
     ExtractionError,
+    MAX_XLSX_BYTES,
     extract_document_text,
     is_extractable_document,
 )
@@ -289,6 +290,20 @@ class TestReadFileToolIntegration(unittest.TestCase):
         res = json.loads(read_file_tool(p))
         self.assertTrue(res.get("extracted_document"))
         self.assertIn("Report body", res["content"])
+
+    def test_oversized_xlsx_rejected_before_zip_parsing(self):
+        p = os.path.join(self.tmp, "huge.xlsx")
+        with open(p, "wb") as fh:
+            fh.truncate(MAX_XLSX_BYTES + 1)
+
+        res = json.loads(read_file_tool(p))
+
+        self.assertIn("error", res)
+        self.assertIn("XLSX", res["error"])
+        self.assertIn("limit", res["error"].lower())
+        self.assertEqual(res.get("size_bytes"), MAX_XLSX_BYTES + 1)
+        self.assertEqual(res.get("max_size_bytes"), MAX_XLSX_BYTES)
+        self.assertNotIn("binary", res["error"].lower())
 
 
 if __name__ == "__main__":

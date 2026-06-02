@@ -13,6 +13,7 @@ from agent.file_safety import get_read_block_error
 from tools.binary_extensions import has_binary_extension
 from tools.read_extract import (
     ExtractionError,
+    MAX_XLSX_BYTES,
     extract_document_text,
     is_extractable_document,
 )
@@ -650,6 +651,24 @@ def _read_extracted_document(
         failed — in which case the caller falls through to the normal read path
         so the file stays inspectable (raw text or the binary guard).
     """
+    if resolved_str.lower().endswith(".xlsx"):
+        try:
+            size_bytes = os.path.getsize(resolved_str)
+        except OSError:
+            size_bytes = None
+
+        if size_bytes is not None and size_bytes > MAX_XLSX_BYTES:
+            return json.dumps({
+                "error": (
+                    f"Cannot extract XLSX file '{display_path}': "
+                    f"file is {size_bytes:,} bytes, exceeding the "
+                    f"{MAX_XLSX_BYTES:,}-byte safety limit."
+                ),
+                "path": display_path,
+                "size_bytes": size_bytes,
+                "max_size_bytes": MAX_XLSX_BYTES,
+            }, ensure_ascii=False)
+
     try:
         text = extract_document_text(resolved_str)
     except ExtractionError:

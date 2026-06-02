@@ -30,6 +30,7 @@ from xml.etree import ElementTree as ET
 
 __all__ = [
     "EXTRACTABLE_EXTENSIONS",
+    "MAX_XLSX_BYTES",
     "is_extractable_document",
     "extract_document_text",
     "ExtractionError",
