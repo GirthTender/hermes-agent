@@ -540,6 +540,19 @@ class TestConfigVersionDetection:
             assert load_config()["_config_version"] == DEFAULT_CONFIG["_config_version"]
             assert check_config_version() == (0, DEFAULT_CONFIG["_config_version"])
 
+    @pytest.mark.parametrize("raw_version", [True, False, -7, "not-a-version"])
+    def test_check_config_version_treats_malformed_versions_as_legacy(
+        self, tmp_path, raw_version
+    ):
+        config_path = tmp_path / "config.yaml"
+        config_path.write_text(
+            yaml.safe_dump({"_config_version": raw_version, "model": {}}),
+            encoding="utf-8",
+        )
+
+        with patch.dict(os.environ, {"HERMES_HOME": str(tmp_path)}):
+            assert check_config_version() == (0, DEFAULT_CONFIG["_config_version"])
+
     def test_check_config_version_treats_missing_file_as_current(self, tmp_path):
         with patch.dict(os.environ, {"HERMES_HOME": str(tmp_path)}):
             latest = DEFAULT_CONFIG["_config_version"]

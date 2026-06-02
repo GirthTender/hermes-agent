@@ -92,6 +92,40 @@ def test_docker_config_migrate_backs_up_and_migrates_unversioned_config(tmp_path
     assert list(tmp_path.glob("config.yaml.bak-*"))
 
 
+def test_docker_config_migrate_backs_up_and_migrates_malformed_config_version(
+    tmp_path: Path,
+) -> None:
+    for raw_version in (True, False, -7, "not-a-version"):
+        hermes_home = tmp_path / str(raw_version).lower().replace("-", "negative-")
+        hermes_home.mkdir()
+        config_path = hermes_home / "config.yaml"
+        config_path.write_text(
+            yaml.safe_dump(
+                {
+                    "_config_version": raw_version,
+                    "custom_providers": [
+                        {
+                            "name": "Local API",
+                            "base_url": "http://localhost:8080/v1",
+                            "api_key": "test-key",
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        proc = _run_migration(hermes_home)
+
+        assert proc.returncode == 0, proc.stderr
+        assert "Migrating config schema 0 ->" in proc.stdout
+        raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        assert raw["_config_version"] == DEFAULT_CONFIG["_config_version"]
+        assert "custom_providers" not in raw
+        assert raw["providers"]["local-api"]["api"] == "http://localhost:8080/v1"
+        assert list(hermes_home.glob("config.yaml.bak-*"))
+
+
 def test_docker_config_migrate_does_not_rewrite_invalid_yaml(tmp_path: Path) -> None:
     config_path = tmp_path / "config.yaml"
     original = "model: [unterminated\n"
