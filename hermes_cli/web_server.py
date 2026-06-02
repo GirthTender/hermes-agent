@@ -5198,6 +5198,16 @@ async def create_hook(body: HookCreate):
     command = (body.command or "").strip()
     if not event or not command:
         raise HTTPException(status_code=400, detail="event and command are required")
+    if body.timeout is not None:
+        timeout = int(body.timeout)
+        if timeout < 1 or timeout > shell_hooks.MAX_TIMEOUT_SECONDS:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"timeout must be between 1 and "
+                    f"{shell_hooks.MAX_TIMEOUT_SECONDS} seconds"
+                ),
+            )
 
     try:
         from hermes_cli.plugins import VALID_HOOKS

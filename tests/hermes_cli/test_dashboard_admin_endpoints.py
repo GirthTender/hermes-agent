@@ -244,6 +244,20 @@ class TestOpsEndpoints:
             "/api/ops/hooks", json={"event": "no_such_event", "command": "/x"}
         ).status_code == 400
 
+        # Invalid timeouts are rejected before config or allowlist writes.
+        bad = self.client.post(
+            "/api/ops/hooks",
+            json={
+                "event": "pre_tool_call",
+                "command": "/bin/echo bad-timeout",
+                "timeout": -1,
+                "approve": True,
+            },
+        )
+        assert bad.status_code == 400
+        hooks_bad = self.client.get("/api/ops/hooks").json()["hooks"]
+        assert not [h for h in hooks_bad if h["command"] == "/bin/echo bad-timeout"]
+
         # Delete it.
         r = self.client.request(
             "DELETE",
