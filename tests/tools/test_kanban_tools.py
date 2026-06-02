@@ -798,6 +798,66 @@ def test_create_inherits_worker_dir_workspace(monkeypatch, worker_env):
         conn.close()
 
 
+def test_create_with_partial_worker_dir_workspace_arg_inherits_missing_path(monkeypatch, worker_env):
+    """A worker that specifies only the workspace kind for a child still
+    inherits the missing path from its own task workspace.
+
+    This covers the partial-args edge: the model may pass
+    ``workspace_kind=\"dir\"`` while omitting ``workspace_path`` because the
+    current task context already named the project directory. That should keep
+    the follow-up child in the same project, not create a pathless dir task.
+    """
+    from tools import kanban_tools as kt
+    from hermes_cli import kanban_db as kb
+
+    proj = "/home/teknium/myproject"
+    conn = kb.connect()
+    try:
+        self_tid = kb.create_task(
+            conn, title="dir worker", assignee="test-worker",
+            workspace_kind="dir", workspace_path=proj,
+        )
+        kb.claim_task(conn, self_tid)
+    finally:
+        conn.close()
+    monkeypatch.setenv("HERMES_KANBAN_TASK", self_tid)
+
+    d = json.loads(kt._handle_create({
+        "title": "pathless dir follow-up",
+        "assignee": "peer",
+        "workspace_kind": "dir",
+    }))
+    assert d["ok"] is True
+    conn = kb.connect()
+    try:
+        child = kb.get_task(conn, d["task_id"])
+        assert child is not None
+        assert child.workspace_kind == "dir"
+        assert child.workspace_path == proj
+    finally:
+        conn.close()
+
+
+def test_create_with_stale_worker_task_env_stays_scratch(monkeypatch, worker_env):
+    """A stale HERMES_KANBAN_TASK must not make kanban_create error while
+    trying to inherit workspace; it simply falls back to the scratch default.
+    """
+    from tools import kanban_tools as kt
+    from hermes_cli import kanban_db as kb
+
+    monkeypatch.setenv("HERMES_KANBAN_TASK", "t_missing_stale_worker_task")
+    d = json.loads(kt._handle_create({"title": "stale env child", "assignee": "peer"}))
+    assert d["ok"] is True
+    conn = kb.connect()
+    try:
+        child = kb.get_task(conn, d["task_id"])
+        assert child is not None
+        assert child.workspace_kind == "scratch"
+        assert child.workspace_path is None
+    finally:
+        conn.close()
+
+
 def test_create_explicit_workspace_beats_inheritance(monkeypatch, worker_env):
     """An explicit workspace arg overrides worker-task inheritance."""
     from tools import kanban_tools as kt

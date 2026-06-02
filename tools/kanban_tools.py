@@ -743,18 +743,18 @@ def _handle_create(args: dict, **kw) -> str:
     # CLI / dashboard paths and on legacy hosts that don't set the env.
     session_id = args.get("session_id") or os.environ.get("HERMES_SESSION_ID")
     priority = args.get("priority")
-    # Resolve workspace. If the caller passed one explicitly, honor it.
-    # Otherwise, a dispatcher-spawned worker (HERMES_KANBAN_TASK set)
-    # inherits its own running task's workspace, so a worker editing a
-    # dir:/worktree project that spawns a follow-up child keeps the child
-    # in that project instead of a throwaway scratch dir. Orchestrators
+    # Resolve workspace. If the caller passed a complete workspace,
+    # honor it. Otherwise, a dispatcher-spawned worker
+    # (HERMES_KANBAN_TASK set) inherits missing workspace pieces from its
+    # own running task, so a worker editing a dir:/worktree project that
+    # spawns a follow-up child keeps the child in that project instead of
+    # a throwaway scratch dir or a pathless dir task. Orchestrators
     # (kanban toolset, no HERMES_KANBAN_TASK) and CLI/dashboard callers
-    # fall back to scratch as before. Explicit None path stays None.
+    # fall back to scratch as before. Explicitly different kind (for
+    # example scratch) does not inherit the worker task's path.
     workspace_kind = args.get("workspace_kind")
     workspace_path = args.get("workspace_path")
-    _inherit_workspace = workspace_kind is None and workspace_path is None
-    if workspace_kind is None:
-        workspace_kind = "scratch"
+    _inherit_workspace = workspace_kind is None or workspace_path is None
     triage, bool_error = _parse_bool_arg(args, "triage")
     if bool_error:
         return tool_error(bool_error)
@@ -784,14 +784,23 @@ def _handle_create(args: dict, **kw) -> str:
         kb, conn = _connect(board=board)
         try:
             # Inherit the spawning worker's own task workspace when the
-            # caller didn't specify one (see resolution note above).
+            # caller omitted some or all workspace fields (see resolution
+            # note above). A missing/stale HERMES_KANBAN_TASK is ignored so
+            # kanban_create still behaves like an orchestrator/CLI call.
             if _inherit_workspace:
                 _self_tid = os.environ.get("HERMES_KANBAN_TASK")
                 if _self_tid:
                     _self_task = kb.get_task(conn, _self_tid)
                     if _self_task is not None and _self_task.workspace_kind:
-                        workspace_kind = _self_task.workspace_kind
-                        workspace_path = _self_task.workspace_path
+                        if workspace_kind is None:
+                            workspace_kind = _self_task.workspace_kind
+                        if (
+                            workspace_path is None
+                            and workspace_kind == _self_task.workspace_kind
+                        ):
+                            workspace_path = _self_task.workspace_path
+            if workspace_kind is None:
+                workspace_kind = "scratch"
             new_tid = kb.create_task(
                 conn,
                 title=str(title).strip(),
