@@ -797,6 +797,14 @@ class SlackAdapter(BasePlatformAdapter):
         metadata: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
         """Send a message to a Slack channel or DM."""
+        # CLO-FIX (#5/#6, 2026-07-26): drop bare agent sentinels / tool-call echoes so they
+        # never post to Slack. The SOUL group-silence rule emits "NO_REPLY"; the Feishu adapter
+        # already suppresses it (feishu_comment.py) but Slack did not. Matches ONLY when the whole
+        # message is the sentinel or a bare '<name>_view: "..."' echo — never real prose.
+        _stripped = (content or "").strip()
+        if _stripped == "NO_REPLY" or re.match(r'^(:[\w+-]+:\s*)?[a-z_]+_view\s*:\s*"[^"]*"$', _stripped):
+            logger.info("[Slack] Suppressed non-deliverable agent output (%d chars): %r", len(_stripped), _stripped[:60])
+            return SendResult(success=True, message_id=None, raw_response=None)
         if not self._app:
             return SendResult(success=False, error="Not connected")
 
