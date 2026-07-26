@@ -691,6 +691,9 @@ class SlackAdapter(BasePlatformAdapter):
                 "[Slack] Socket Mode connected (%d workspace(s))",
                 len(self._team_clients),
             )
+            if getattr(self, "_hb_task", None) is not None and not self._hb_task.done():
+                self._hb_task.cancel()
+            self._hb_task = asyncio.create_task(self._socket_heartbeat())
             return True
 
         except Exception as e:  # pragma: no cover - defensive logging
@@ -735,6 +738,33 @@ class SlackAdapter(BasePlatformAdapter):
             )
         return None
 
+    async def _socket_heartbeat(self, interval: int = 300, initial_delay: int = 15) -> None:
+        """Periodically log true Slack socket liveness so hermes-socket-guard can tell
+        an idle-but-healthy socket from a silently-dead one, even out of hours.
+        Log-only; never raises into the event loop."""
+        try:
+            await asyncio.sleep(initial_delay)
+        except asyncio.CancelledError:
+            return
+        while True:
+            try:
+                connected = False
+                try:
+                    client = getattr(self._handler, "client", None)
+                    if client is not None:
+                        connected = bool(await client.is_connected())
+                except Exception:
+                    connected = False
+                logger.info("[Slack] heartbeat: socket_connected=%s", connected)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:  # pragma: no cover - defensive
+                logger.warning("[Slack] heartbeat loop error: %s", e)
+            try:
+                await asyncio.sleep(interval)
+            except asyncio.CancelledError:
+                break
+
     async def disconnect(self) -> None:
         """Disconnect from Slack."""
         if self._handler:
@@ -743,6 +773,10 @@ class SlackAdapter(BasePlatformAdapter):
             except Exception as e:  # pragma: no cover - defensive logging
                 logger.warning("[Slack] Error while closing Socket Mode handler: %s", e, exc_info=True)
         self._running = False
+        hb = getattr(self, "_hb_task", None)
+        if hb is not None and not hb.done():
+            hb.cancel()
+        self._hb_task = None
 
         self._release_platform_lock()
 
