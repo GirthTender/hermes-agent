@@ -803,8 +803,14 @@ class SlackAdapter(BasePlatformAdapter):
         # message is the sentinel or a bare '<name>_view: "..."' echo — never real prose.
         _stripped = (content or "").strip()
         if _stripped == "NO_REPLY" or re.match(r'^(:[\w+-]+:\s*)?[a-z_]+_view\s*:\s*"[^"]*"$', _stripped):
-            logger.info("[Slack] Suppressed non-deliverable agent output (%d chars): %r", len(_stripped), _stripped[:60])
-            return SendResult(success=True, message_id=None, raw_response=None)
+            # CLO-FIX #1 (2026-07-30): if this NO_REPLY answers a roll-call @mention, auto-ack instead of
+            # swallowing it (the model overrides the SOUL 'must answer' rule; proven in NOREPLY brief).
+            if _stripped == "NO_REPLY" and getattr(self, "_pending_rollcall_ack", {}).pop(chat_id, None):
+                content = "ROGER — online :white_check_mark: (auto-ack)"
+                _stripped = content.strip()
+            else:
+                logger.info("[Slack] Suppressed non-deliverable agent output (%d chars): %r", len(_stripped), _stripped[:60])
+                return SendResult(success=True, message_id=None, raw_response=None)
         if not self._app:
             return SendResult(success=False, error="Not connected")
 
@@ -2036,6 +2042,13 @@ class SlackAdapter(BasePlatformAdapter):
                 if not reply_to_bot_thread and not in_mentioned_thread and not has_session:
                     return
 
+        # CLO-FIX #1 (2026-07-30): roll-call auto-ack — remember a roll-call/SITREP @mention so that if
+        # the model returns NO_REPLY (it ignores the SOUL 'must answer' rule) we still ack. See NOREPLY brief.
+        _clo_rc = (routing_text or "").lower()
+        if is_mentioned and any(_k in _clo_rc for _k in ("radio check", "roll-call", "roll call", "sitrep", "status brief", "report status", "check in")):
+            if not hasattr(self, "_pending_rollcall_ack"):
+                self._pending_rollcall_ack = {}
+            self._pending_rollcall_ack[channel_id] = True
         if is_mentioned:
             # Strip the bot mention from the text
             text = text.replace(f"<@{bot_uid}>", "").strip()
